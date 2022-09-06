@@ -3,38 +3,35 @@ use crate::{
     shared::{jwt_schema::JwtSchema, user_schema::User},
 };
 use axum::{http::StatusCode, response::IntoResponse, Json};
-use bcrypt::{hash, verify};
+use bcrypt::{hash, verify, DEFAULT_COST};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use mongodb::bson::doc;
 use serde_json::json;
 use std::env;
-use validator::Validate;
+// use validator::Validate;
+
 ///create a new user
 pub async fn sign_up(Json(payload): Json<User>) -> impl IntoResponse {
     //destructure the request
     let User {
-        firstname,
-        lastname,
-        email,
-        password,
-        ..
+        username, password, ..
     } = payload;
     let database = mongodb().await;
     let collection = database.collection::<User>("user");
 
-    //TODO: validate the user object, first check if user with email already exists
+    //TODO: validate the user object, first check if user with username already exists
     // let error: Vec<String>;
     /*  if assert_eq!(firstname.is_empty(), true) {
         error.push("Firstname cannot be empty".to_string());
     } */
 
     /*
-     * find user by email
+     * find user by username
      * if user already exist send error message
      * else create a new account with provided details
      */
     let user_already_exists = collection
-        .find_one(doc! { "email": &email }, None)
+        .find_one(doc! { "username": &username }, None)
         .await
         .unwrap();
     if let Some(_) = user_already_exists {
@@ -49,11 +46,9 @@ pub async fn sign_up(Json(payload): Json<User>) -> impl IntoResponse {
     }
 
     //construct a new user form the validated request payload
-    let hashed_password = hash(password, 12).unwrap();
+    let hashed_password = hash(password, DEFAULT_COST).unwrap();
     let user = User {
-        firstname: firstname,
-        lastname: lastname,
-        email: email,
+        username: username,
         password: hashed_password,
     };
 
@@ -71,50 +66,28 @@ pub async fn sign_up(Json(payload): Json<User>) -> impl IntoResponse {
 
 ///login a new user
 pub async fn login(Json(payload): Json<User>) -> impl IntoResponse {
-    //:validate the payload
-    let mut request_body_errors: Vec<String> = vec![];
-    if payload.password.is_empty() {
-        request_body_errors.push("password cannot be blank".to_string());
-    }
-
-    if payload.email.is_empty() {
-        request_body_errors.push("no email was provided ".to_string());
-    }
-
-    if request_body_errors.len() >= 1 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "success":false,
-            "message":"badly formatted request",
-            "errors":request_body_errors
-            })),
-        );
-    }
+    //TODO:// validate the request
     //destructure the request body
     let User {
-        email,
+        username,
         password: user_password,
         ..
     } = payload;
 
-    //find user by email
+    //find user by username
     let database = mongodb().await;
-    let collection = database.collection::<User>("user");
+    let collection = database.collection::<User>("user_information");
     let result = collection
-        .find_one(doc! { "email": &email }, None)
+        .find_one(doc! { "username": &username }, None)
         .await
         .unwrap();
 
     //try to destructure the found object
-    let (firstname, email, password) = if let Some(User {
-        firstname,
-        email,
-        password,
-        ..
+    let (username, password) = if let Some(User {
+        username, password, ..
     }) = result
     {
-        (firstname, email, password)
+        (username, password)
     } else {
         //if no user was found return 404 error
         return (
@@ -128,15 +101,28 @@ pub async fn login(Json(payload): Json<User>) -> impl IntoResponse {
     };
 
     //check for correctness of password, if correct send access token
-    let is_correct_password = verify(user_password, &password);
-    // println!("the password result is {:?}", correct_password);
-    match is_correct_password {
-        Ok(_) => {
-            //:encrypt the user data
-            let jwt_payload = JwtSchema { email, firstname };
-            let jwt_secret = env::var("JWT_SECRET").unwrap_or(
-                "Ux6qlTEMdT0gSLq9GHp812R9XP3KSGSWcyrPpAypsTpRHxvLqYkeYNYfRZjL9".to_string(),
-            );
+    let check_password = verify(user_password, &password);
+    match check_password {
+        Ok(is_correct_password) => {
+            //if user is found but the password is wrong, return error
+            if !is_correct_password {
+                return (
+                    StatusCode::FOUND,
+                    Json(json!({
+                        "success":true,
+                        "message":format!("Incorrect password for {}", &username),
+                        "data":None::<User>
+                    })),
+                );
+            }
+
+            //if user is found, fetch the JWT secret and prepare a payload
+            let jwt_payload = JwtSchema { username };
+            let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| {
+                "Ux6qlTEMdT0gSLq9GHp812R9XP3KSGSWcyrPpAApy65S4NdUjioWypsTpRHxvLqYkeYNYfRZjL9"
+                    .to_string()
+            });
+            //prepare a token
             let token = encode(
                 &Header::default(),
                 &jwt_payload,
@@ -149,19 +135,19 @@ pub async fn login(Json(payload): Json<User>) -> impl IntoResponse {
                 StatusCode::OK,
                 Json(json!({
                     "success":true,
-                    "message":"user successfully created".to_string(),
+                    "message":String::from("user successfully created"),
                     "data":json!({
                         "token":token,
-                        "type":"Bearer".to_string()
+                        "type":String::from("Bearer")
                     })
                 })),
             )
         }
         Err(_) => (
-            StatusCode::UNAUTHORIZED,
+            StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({
                 "success":false,
-                "message":"invalid email or password".to_string(),
+                "message":String::from("Internal server error"),
                 "data":None::<User>
             })),
         ),
@@ -171,9 +157,9 @@ pub async fn login(Json(payload): Json<User>) -> impl IntoResponse {
 ///reset user password
 pub async fn reset_password(Json(payload): Json<User>) -> impl IntoResponse {
     //destructure the request body
-    let User { email, .. } = payload;
+    let User { username, .. } = payload;
     Json(json!({
-        "email":email,
+        "username":username,
     }))
 }
 
