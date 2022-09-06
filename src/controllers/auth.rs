@@ -135,7 +135,7 @@ pub async fn login(Json(payload): Json<User>) -> impl IntoResponse {
                 StatusCode::OK,
                 Json(json!({
                     "success":true,
-                    "message":String::from("user successfully created"),
+                    "message":String::from("user successfully logged in"),
                     "data":json!({
                         "token":token,
                         "type":String::from("Bearer")

@@ -1,5 +1,5 @@
 use axum::{routing::get, Router};
-use dotenv;
+// use dotenv;
 use std::env;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
@@ -12,7 +12,7 @@ mod shared;
 #[tokio::main]
 async fn main() -> mongodb::error::Result<()> {
     //try reading the environment variables
-    dotenv::dotenv().expect("Failed to read .env file");
+    // dotenv::dotenv().expect("Failed to read .env file");
     //connect to database
     config::database::mongodb().await;
     println!("Successfully connected to database");
@@ -22,7 +22,7 @@ async fn main() -> mongodb::error::Result<()> {
     //mount the app routes
     let app = Router::new()
         .nest("/v1/", routes::root::router())
-        .route("/", get(|| async { "Nitrogen" }))
+        .route("/", get(|| async { "A chip off nitrogen" }))
         .layer(cors);
     //mount the server to an ip address
     let port = env::var("PORT")
