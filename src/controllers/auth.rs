@@ -107,7 +107,7 @@ pub async fn login(Json(payload): Json<User>) -> impl IntoResponse {
             //if user is found but the password is wrong, return error
             if !is_correct_password {
                 return (
-                    StatusCode::FOUND,
+                    StatusCode::UNAUTHORIZED,
                     Json(json!({
                         "success":true,
                         "message":format!("Incorrect password for {}", &username),
